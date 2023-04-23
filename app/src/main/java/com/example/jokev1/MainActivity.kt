@@ -9,12 +9,49 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.annotation.StringRes
+import java.io.BufferedInputStream
+import java.io.InputStreamReader
+import java.lang.Exception
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.UnknownHostException
 
 class JokeApp:Application() {
     lateinit var viewModel: ViewModel
     override fun onCreate() {
         super.onCreate()
-        viewModel=ViewModel(TestModel(BaseResourceManager(this)))
+        viewModel=ViewModel(BaseModel(BaseJokeService(),BaseResourceManager(this)))
+    }
+}
+
+class BaseModel(
+    private val service: JokeService,
+    private val resourceManager: ResourceManager
+    ) : Model {
+    private var callback: ResultCallback?=null
+    private val noConnection by lazy { NoConnection(resourceManager) }
+    private val serviceUnavailable by lazy { ServiceUnavailable(resourceManager) }
+    override fun getJoke() {
+        service.getJoke(object : ServiceCallback{
+            override fun returnSuccess(data: String) {
+                callback?.provideSuccess(Joke(data,""))
+            }
+
+            override fun returnError(type: ErrorType) {
+                when(type){
+                    ErrorType.NO_CONNECTION->callback?.provideError(noConnection)
+                    ErrorType.OTHER->callback?.provideError(serviceUnavailable)
+                }
+            }
+        })
+    }
+
+    override fun init(callback: ResultCallback) {
+        this.callback=callback
+    }
+
+    override fun clear() {
+        callback=null
     }
 }
 
@@ -150,5 +187,47 @@ interface ResourceManager{
 class BaseResourceManager(private val context:Context):ResourceManager{
     override fun getString(stringResId: Int): String {
         return context.getString(stringResId)
+    }
+}
+
+//------------------------------------------------------------------------------------------------
+interface JokeService{
+    fun getJoke(callback: ServiceCallback)
+}
+
+interface ServiceCallback{
+    fun returnSuccess(data: String)
+    fun returnError(type: ErrorType)
+}
+
+enum class ErrorType{
+    NO_CONNECTION,
+    OTHER
+}
+
+class BaseJokeService: JokeService{
+    override fun getJoke(callback: ServiceCallback) {
+        Thread{
+            var connection: HttpURLConnection?=null
+            try {
+                val url= URL(JOKE_URL)
+                connection=url.openConnection() as HttpURLConnection
+                InputStreamReader(BufferedInputStream(connection.inputStream)).use {
+                    val line:String=it.readText()
+                    callback.returnSuccess(line)
+                }
+            }catch (e:Exception){
+                if (e is UnknownHostException)
+                    callback.returnError(ErrorType.NO_CONNECTION)
+                else
+                    callback.returnError(ErrorType.OTHER)
+            }finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
+
+    private companion object{
+        const val JOKE_URL="https://official-joke-api.appspot.com/random_joke/"
     }
 }
