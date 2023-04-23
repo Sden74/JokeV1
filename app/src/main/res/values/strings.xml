@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">JokeV1</string>
     <string name="get_Joke">GET JOKE</string>
+    <string name="service_unavailable">Service is unavailable</string>
+    <string name="no_connection">No internet connection</string>
 </resources>

@@ -1,18 +1,20 @@
 package com.example.jokev1
 
 import android.app.Application
+import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.annotation.StringRes
 
 class JokeApp:Application() {
     lateinit var viewModel: ViewModel
     override fun onCreate() {
         super.onCreate()
-        viewModel=ViewModel(TestModel())
+        viewModel=ViewModel(TestModel(BaseResourceManager(this)))
     }
 }
 
@@ -52,18 +54,18 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-class ViewModel(private val model:Model<Any,Any>){
+class ViewModel(private val model:Model){
     private var callback:TextCallback?=null
 
     fun init(callback: TextCallback){
         this.callback=callback
-        model.init(object : ResultCallback<Any,Any>{
-            override fun provideSuccess(data: Any) {
-                callback.provideText(data.toString())
+        model.init(object : ResultCallback{
+            override fun provideSuccess(data: Joke) {
+                callback.provideText(data.getJokeUi())
             }
 
-            override fun provideError(error: Any) {
-                callback.provideText(error.toString())
+            override fun provideError(error: JokeFailure) {
+                callback.provideText(error.getMessage())
             }
         })
     }
@@ -76,21 +78,23 @@ class ViewModel(private val model:Model<Any,Any>){
     }
 }
 
-interface Model<S,E> {
-    fun init(callback: ResultCallback<S,E>)
+interface Model{
+    fun init(callback: ResultCallback)
     fun getJoke()
     fun clear()
 }
-interface ResultCallback<S,E>{
-    fun provideSuccess(data: S)
-    fun provideError(error: E)
+interface ResultCallback{
+    fun provideSuccess(data: Joke)
+    fun provideError(error: JokeFailure)
 }
 
-class TestModel:Model<Any,Any>{
-    private var callback:ResultCallback<Any,Any>?=null
+class TestModel(resourceManager: ResourceManager):Model{
+    private var callback:ResultCallback?=null
     private var count=1
+    private val noConnection=NoConnection(resourceManager)
+    private val serviceUnavailable=ServiceUnavailable(resourceManager)
 
-    override fun init(callback: ResultCallback<Any, Any>) {
+    override fun init(callback: ResultCallback) {
         this.callback=callback
     }
     /*override fun getJoke() {
@@ -105,15 +109,46 @@ class TestModel:Model<Any,Any>{
     override fun getJoke() {
         Thread {
             Thread.sleep(1000)
-            if (count % 2 == 0) {
-                callback?.provideSuccess("success")
-            } else {
-                callback?.provideError("error")
+            when(count){
+                0->callback?.provideSuccess(Joke("testText", "testPunchline"))
+                1->callback?.provideError(noConnection)
+                2->callback?.provideError(serviceUnavailable)
             }
             count++
+            if (count==3) count=0
         }.start()
     }
     override fun clear() {
         this.callback=null
+    }
+}
+//---------------------------------------------------------------------------------------------
+class Joke(private val text: String, private val punchline: String){
+    fun getJokeUi()="$text\n$punchline"
+}
+
+interface JokeFailure{
+    fun getMessage():String
+}
+
+class NoConnection(private val resourceManager: ResourceManager):JokeFailure{
+    override fun getMessage(): String {
+        return resourceManager.getString(R.string.no_connection)
+    }
+}
+
+class ServiceUnavailable(private val resourceManager: ResourceManager):JokeFailure{
+    override fun getMessage(): String {
+        return resourceManager.getString(R.string.service_unavailable)
+    }
+}
+
+interface ResourceManager{
+    fun getString(@StringRes stringResId: Int):String
+}
+
+class BaseResourceManager(private val context:Context):ResourceManager{
+    override fun getString(stringResId: Int): String {
+        return context.getString(stringResId)
     }
 }
